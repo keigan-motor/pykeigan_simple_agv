@@ -19,14 +19,18 @@ KeiganMotor，Raspberry Pi, カメラ, を使用して、USBモバイルバッ�
 ## 必要条件
 ### ハードウェア
 - Raspberry Pi 3B+ または 3A+
-- Pi Camera https://picamera.readthedocs.io/
+- Pi Camera 
+    - https://picamera.readthedocs.io/
 - KeiganMotor KM-1S-M6829
-- KeiganMotor KM-1S-M6829 搬送ローラー
+    - https://keigan-motor.com/km-1s/
+- KeiganMotor KM-1S-M6829 ホイールキット
+    - ページ作成中
 
 ### ソフトウェア
 - Linux 系 OS
 - Python >= 3.5 (recommended) or 2.7
-- pyserial >= 3.4
+- pykeigan_motor >= 2.2.5 
+    - https://github.com/keigan-motor/pykeigan_motor
 - opencv-contrib-python 4.3
 
 ## OpenCV のインストール
