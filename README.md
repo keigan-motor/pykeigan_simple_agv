@@ -34,8 +34,9 @@ KeiganMotor，Raspberry Pi, カメラ, を使用して、USBモバイルバッ�
 - opencv-contrib-python 4.3
 
 ## OpenCV のインストール
+バージョンは 4.1.0.25 を指定して下さい。
 ```
-pip3 install opencv-contrib-python
+pip3 install opencv-contrib-python==4.1.0.25
 ```
 上記だけで動作しない場合、以下を全てインストールします。
 ***必ず 1個ずつ行うこと。一気にコピペしてやると[Y]入力のところで失敗します。***
