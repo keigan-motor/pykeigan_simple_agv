@@ -1,11 +1,11 @@
-Simple line tracer AGV framework using KeiganMotor
+Simple line tracer AGV framework by KeiganMotor
 ==============================================
 
 ## はじめに
-KeiganMotor，Raspberry Pi, カメラ, を使用して、USBモバイルバッテリーで動作するライントレーサーAGVを作ることができます。
+KeiganMotor，Raspberry Pi, PiCamera, を使用して、USBモバイルバッテリーで動作するライントレーサーAGVを作ることができます。
 
-デフォルト状態では、青色のテープをトレースし、赤色のテープを検知すると停止します。
-
+青色のテープをトレースし、赤色のテープを検知すると停止します。
+***
 ## KeiganAGV Kit
 本AGVシステムを製作するために必要なパーツをキット化したものです。
 動作に必要なソフトウェアはセットアップされています。
@@ -15,7 +15,7 @@ KeiganMotor，Raspberry Pi, カメラ, を使用して、USBモバイルバッ�
 （参考）
 - 製品サイト: https://keigan-motor.com
 - ドキュメント: https://docs.keigan-motor.com
-
+***
 ## 必要条件
 ### ハードウェア
 - Raspberry Pi 3B+ または 3A+
@@ -32,8 +32,11 @@ KeiganMotor，Raspberry Pi, カメラ, を使用して、USBモバイルバッ�
 - pykeigan_motor >= 2.2.5 
     - https://github.com/keigan-motor/pykeigan_motor
 - opencv-contrib-python 4.3
+***
+## 準備
+KeiganAGV Kit では、本「準備」に含まれる内容は全てセットアップ済みです。
 
-## OpenCV のインストール
+### OpenCV のインストール
 バージョンは 4.1.0.25 を指定して下さい。
 ```
 pip3 install opencv-contrib-python==4.1.0.25
@@ -42,6 +45,9 @@ pip3 install opencv-contrib-python==4.1.0.25
 ***必ず 1個ずつ行うこと。一気にコピペしてやると[Y]入力のところで失敗します。***
 
 ```
+sudo apt install libhdf5-103
+sudo apt install libcblas
+sudo apt install libatlas-base-dev
 sudo apt install libhdf5-100
 sudo apt install libharfbuzz0b
 sudo apt install libwebp6
@@ -64,16 +70,113 @@ sudo apt install libqt4-test
 ```
 sudo apt-get install libgtk2.0-dev
 ```
-## Picamera の準備
+### Picamera と VNC Viewer の有効化
 Raspberry Pi デスクトップ画面のメニューボタンから「設定」＞「Raspberry Piの設定」を選択します。
 
-「インターフェイス」タブから、「カメラ」が「有効」になっていることを確認します。
+「インターフェイス」タブから、
+
+- カメラ
+- VNC
+
+ともに 「有効」を選択し、[OK] をクリックします。
+
+再起動後、PiCamera と VNC でのリモートログインが有効になります。
+
+
+### KeiganMotor の接続とデバイスアドレス
+Python から KeiganMotor を USB経由でコントロールするためには、デバイスアドレス（デバイスファイル名）の指定が必要です。
+
+デバイスアドレスを更新した場合、picam_line_tracer_hsv.py における、port_left, port_right をそれぞれ書き換えて下さい。
+
+デバイスアドレスを特定する方法は、以下の２通りあります。
+
+#### (1) 特定のUSBポート番号に対し、デバイスアドレスを固定する
+KeiganAGV Kit では、特定のUSBポートに接続されたデバイスについて、デバイスアドレスを変換しています。
+
+これにより、KeiganMotorによらず、指定のデバイスアドレスでアクセスできます。
+
+#### 手順
+KeiganMotor を固定で接続したいUSBポートに接続し、以下で PATH を調べます。
+```
+sudo udevadm info -q all -n /dev/ttyUSB0
+```
+出力の中で、DEVPATH が
+```
+E: DEVPATH=/devices/platform/soc/3f980000.usb/usb1/1-1/1-1.4/1-1.4:1.0/ttyUSB0/tty/ttyUSB0
+```
+である場合、
+```
+/usb1/1-1/1-1.4/1-1.4:1.0/
+```
+の部分を抽出します。
+
+以下で、固定のUSBポートに対して、デバイスアドレスを固定するためのルールファイルを作成します。
+```
+sudo nano /etc/udev/rules.d/90-usb.rules
+```
+以下のように書き込んで、ESC キー + :wq により、保存します。
+SUBSYSTEM=="tty", DEVPATH=="*/usb1/1-1/1-1.3/1-1.3:1.0/*", SYMLINK+="ttyUSB_RightMotor"
+
+再起動します。
+```
+sudo reboot now
+```
+以下で、正常にデバイスアドレスの置き換えができているか確認します。
+```
+ls -l /dev/ttyUSB*
+```
+正常であれば、以下のように出力されます。
+```
+crw-rw---- 1 root dialout 188, 0  7月 22 19:41 /dev/ttyUSB0
+lrwxrwxrwx 1 root root         7  7月 22 19:36 /dev/ttyUSB_RightMotor -> ttyUSB0
+```
+本手順を、KeiganMotor すべてに対して行います。
+
+#### (2) KeiganMotor固有のデバイスアドレスを使用する
+USBポートのどこにつないでもデバイスアドレスは固有となりますので、
+
+任意のUSBポートに KeiganMotor を１つずつ接続し、以下を実行します。
+```
+$ls /dev/serial/by-id/
+```
+表示されるデバイスアドレス（デバイスファイル）を記録します。
+```
+usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
+```
+である場合、デバイスアドレスは、以下の様になります。
+```
+port_left = "/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0"
+```
+
+***
+## ラインテープの貼り方
+ライントレース用のラインは、50mm幅の、青ラインテープを使います。
+
+停止用の赤テープも含めて、monotaro等で購入可能です。
+https://www.monotaro.com/g/01259483/
+
+***停止用の赤テープも同様であるが、青ラインに対して垂直に、400mm 以上の長さを貼ること。***
+***
 
 
 ## ダウンロードと実行
-本リポジトリのzipファイルをダウンロードし、解凍します。以下を実行します。
+本リポジトリのzipファイルをダウンロードし、解凍します。
+KeiganAGV Kit では、Desktop に pykeigan_simple_agv フォルダを設定しています。
+```
+cd Desktop/pykeigan_simple_agv
+```
+以下のファイルをターミナルで実行します。
 ```
 python3 picam_line_tracer_hsv.py
+```
+※ 本実行ファイルでは、OpenCV による画像出力が必要であり、SSH で実行する場合に
+以下エラーが出ます。
+```
+: cannot connect to X server 
+```
+SSHから実行したい場合は、以下により事前にディスプレイ出力を無効化して下さい。
+```
+export DISPLAY=:0
 ```
 
 ## ライントレースの原理
@@ -92,7 +195,6 @@ STOP_MARKER_AREA_THRESHOLD = 40000 # 停止テープマーカーを検知する�
 ```
 
 ## HSV画像抽出、PIDパラメタの調整
-
 picam_line_tracer_hsv.py を実行すると、各ウインドウの下に、スライダー＝トラックバーが生成されます。
 スライダーを動かすことにより、値を調整します。（値は整数値 0-255 しか設定できません。）
 
@@ -137,16 +239,16 @@ from twd import TWD
 ```
 
 ### 初期化
-port_left, port_right は、従来の KeiganMotor デバイスアドレス。
+port_left, port_right は、従来の KeiganMotor デバイスアドレスとなる。
+デバイスアドレスの指定方法は、上記「KeiganMotor の接続とデバイスアドレス」を参照下さい。
 ```python
 port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KG0L-if00-port0'
 port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KWNH-if00-port0'
-
 twd = TWD(port_left, port_right) # KeiganMotor の2輪台車
 ```
 
-オプションで、以下のプロパティを指定できる
-- safe_time: 安全装置。この値以上超えて次の動作命令を受信できないと、自動的にKeiganMotorが停止する
+オプションで、以下のプロパティを指定できます
+- safe_time: 安全装置。この値[msec]以上超えて次の動作命令を受信できないと、自動的にKeiganMotorが停止する
 - safe_option: 安全オプション。安全装置で作動する停止アクション。(0:free,1:disable,2:stop, 3:position固定)
 - wheel_d: ホイールタイヤの直径（最外径）[mm]
 - tread: トレッド幅。左右の車輪間の距離 [mm]
@@ -155,15 +257,9 @@ twd = TWD(port_left, port_right) # KeiganMotor の2輪台車
 twd = TWD(self, port_left, port_right, safe_time = 1, safe_option = 1, wheel_d = 100, tread = 400)
 ```
 
-#### KeiganMotor デバイスアドレスの見つけ方
-従来と同じで、デバイスアドレス（ポート）は固有IDで指定する
-"/dev/ttyUSB0"で表示されるデバイス名での接続は、複数のモーターを接続した場合に変わる可能性がある。
-複数のモーターがある場合で、モーターを特定して接続する場合は "$ls /dev/serial/by-id/" で表示されるデバイスを使用する。
-```
-/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
-```
 
 ### 動作許可
+本コマンドを入れないと、AGVの動作コマンド（run等）は無効となります。
 ```python
 twd.enable()
 ```
@@ -174,50 +270,47 @@ twd.disable()
 ```
 
 ### 速度制御
-左右の rpm を引数とする。速度差をつけることにより旋回が可能。
+左右の rpm を引数とします。※ 前進したい場合、正の数を引数に取ります。
+速度差をつけることにより旋回が可能です。
 ```python
-twd.run(10, 10) # 左 10[rpm], 右 10[rpm]
+twd.run(10, 10) # 左 10[rpm], 右 10[rpm] で直進
 ```
 
 ### 直進（位置制御）
-まっすぐ進む。左右共通の rpm, 回転角度[deg], タイムアウト[s]を指定する
-負の回転角度で後退となる 
+まっすぐ進みます。左右共通の rpm, 回転角度[deg], タイムアウト[s]を指定します。
+負の回転角度で後退となります。
 ```python
 twd.move_straight(10, 360, 5) # 10rpm, 360[deg], 5[s]
 ```
 
 ### その場で旋回（位置制御）
-回転軸を変えずにその場で旋回する。左右共通の rpm, 真上から見た車体旋回角度[deg], タイムアウト[s]を指定する
-正の旋回角度で ccw 反時計回り、負の旋回角度で cw 時計回りとなる 
+回転軸を変えずにその場で旋回します。
+左右共通の rpm, 真上から見た車体旋回角度[deg], タイムアウト[s]を指定します。
+
+正の旋回角度で ccw 反時計回り、負の旋回角度で cw 時計回りとなります。
+
 ***本コマンドを使用するためには、初期化時に、wheel_d（車輪径）及び tread （トレッド幅）が設定されていなければならない。***
 ```python
 twd.pivot_turn(10, 90, 5) # 10rpm, 90[deg], 5[s]
 ```
 
 ### 停止
-指定秒数停止する（トルクあり）
+指定秒数停止します。（トルクあり）
+引数なしまたはゼロで、状態を継続します。
 ```python
 twd.stop(10) # 10秒後に安全装置復活
 ```
 
 ### フリー
 指定秒数フリー状態とする（粘性トルクあり）
+引数なしまたはゼロで、状態を継続します。
 ```python
 twd.free(10) # 10秒後に安全装置復活
 ```
 
 ### LED
-KeiganMotor 搭載フルカラーLED
+KeiganMotor 搭載フルカラーLEDの制御を行います。
 ```python
 twd.led(1, 355, 0, 0) # 1:点灯, red, green, blue:0-255
 ```
 
-***
-## ラインテープの貼り方
-ライントレース用のラインは、50mm幅の、青ラインテープを使う。
-
-停止用の赤テープも含めて、monotaro等で購入可能
-https://www.monotaro.com/g/01259483/
-
-***停止用の赤テープも同様であるが、青ラインに対して垂直に、400mm 以上の長さを貼ること。***
-***

@@ -110,8 +110,8 @@ class State(Enum):
 """
 
 #Machine @Keigan Motor device name
-port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KF8O-if00-port0'
-port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LPNT-if00-port0'
+port_left='/dev/ttyUSB_LeftMotor'
+port_right='/dev/ttyUSB_RightMotor'
 
 twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 412) # KeiganMotor の2輪台車 TODO
 
