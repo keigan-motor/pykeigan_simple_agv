@@ -19,7 +19,7 @@ import math
 # 2輪駆動車のクラス Two Wheel Drive Car
 class TWD():
     # port_left, port_right はそれぞれ KeiganMotor のデバイスファイルを指定する
-    def __init__(self, port_left, port_right, safe_time = 1, safe_option = 1, wheel_d = 100, tread = 400):
+    def __init__(self, port_left, port_right, safe_time = 1, safe_option = 1, wheel_d = 100, tread = 400, button_event_cb = None):
         self.left = usbcontroller.USBController(port_left,False)
         self.right = usbcontroller.USBController(port_right,False)
         self.safe_time = safe_time
@@ -27,6 +27,7 @@ class TWD():
         self.curve(0)
         self.safe_setting(True)
         self.round_num = tread / wheel_d # 360度回転するのに必要な回転数
+        self.button_setting(button_event_cb)
 
     def enable(self): # モーター動作の許可
         self.safe_setting(True) # 安全装置開始
@@ -36,6 +37,13 @@ class TWD():
     def disable(self): # モーターの動作不許可
         self.left.disable_action()
         self.right.disable_action()
+
+    def button_setting(self, button_event_cb): # KeiganMotor のボタンを有効化する
+        self.left.set_button_setting(30)
+        self.right.set_button_setting(30)
+        # KeiganMotor 本体ボタンが押されたときに呼ばれるコールバック関数を登録する
+        self.left.on_motor_event_cb = button_event_cb
+        self.right.on_motor_event_cb = button_event_cb
 
     def led(self, state, r, g, b): # LEDの色変更 state = 1 が点灯, 0 は消灯, 2 は点滅
         self.left.set_led(state, r, g, b)

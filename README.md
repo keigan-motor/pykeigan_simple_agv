@@ -5,7 +5,7 @@ Simple line tracer AGV framework by KeiganMotor
 KeiganMotor，Raspberry Pi, PiCamera, を使用して、USBモバイルバッテリーで動作するライントレーサーAGVを作ることができます。
 
 青色のテープをトレースし、赤色のテープを検知すると停止します。
-***
+
 ## KeiganAGV Kit
 本AGVシステムを製作するために必要なパーツをキット化したものです。
 動作に必要なソフトウェアはセットアップされています。
@@ -15,7 +15,7 @@ KeiganMotor，Raspberry Pi, PiCamera, を使用して、USBモバイルバッテ
 （参考）
 - 製品サイト: https://keigan-motor.com
 - ドキュメント: https://docs.keigan-motor.com
-***
+
 ## 必要条件
 ### ハードウェア
 - Raspberry Pi 3B+ または 3A+
@@ -32,7 +32,7 @@ KeiganMotor，Raspberry Pi, PiCamera, を使用して、USBモバイルバッテ
 - pykeigan_motor >= 2.2.5 
     - https://github.com/keigan-motor/pykeigan_motor
 - opencv-contrib-python 4.3
-***
+
 ## 準備
 KeiganAGV Kit では、本「準備」に含まれる内容は全てセットアップ済みです。
 
@@ -148,35 +148,114 @@ usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
 port_left = "/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0"
 ```
 
-***
+
 ## ラインテープの貼り方
 ライントレース用のラインは、50mm幅の、青ラインテープを使います。
 
 停止用の赤テープも含めて、monotaro等で購入可能です。
 https://www.monotaro.com/g/01259483/
 
-***停止用の赤テープも同様であるが、青ラインに対して垂直に、400mm 以上の長さを貼ること。***
-***
+***停止用の赤テープは、青ラインに対して垂直に、400mm 以上の長さを貼ること。***
+
 
 
 ## ダウンロードと実行
 本リポジトリのzipファイルをダウンロードし、解凍します。
-KeiganAGV Kit では、Desktop に pykeigan_simple_agv フォルダを設定しています。
+
+KeiganAGV Kit では、Desktop に pykeigan_simple_agv フォルダを予め設置しています。
+
+Raspberry Pi に直接 HDMIディスプレイとキーボードを接続するか、VNC Viewer で Raspberry Pi に接続します。
+
+以下をターミナルで実行します。
 ```
 cd Desktop/pykeigan_simple_agv
 ```
-以下のファイルをターミナルで実行します。
 ```
 python3 picam_line_tracer_hsv.py
 ```
-※ 本実行ファイルでは、OpenCV による画像出力が必要であり、SSH で実行する場合に
-以下エラーが出ます。
+
+プログラムが正常に実行されれば、以下のようなログが出力されます。
 ```
-: cannot connect to X server 
+Keigan Line Tracer Start !
+-> State.STATE_IDLE
+キーボードの [s] + Enter または 赤ボタン: ストップ STATE_IDLE
+キーボードの [t] + Enter または 緑ボタン: ライントレーサー STATE_LINE_TRACE
+キーボードの [d] + Enter :デバッグ用 STATE_DEBUG
 ```
-SSHから実行したい場合は、以下により事前にディスプレイ出力を無効化して下さい。
+***KeiganAGVKit では、本プログラムは起動時に自動実行するように設定しています（後述）。***
+
+## 使い方
+以下の3通りの方法で、ライントレースの開始と停止をコントロールできます。
+- OpenCV で出力される ウィンドウのいずれかを選択した状態で、上記のキーボード操作
+    - ライントレース停止（STATE_IDLE）: キーボードの[s] + Enter
+    - ライントレース開始（STATE_LINE_TRACE）: キーボードの[t] + Enter
+    - デバッグ用:ログを出力して画像のみ確認（STATE_DEBUG）: キーボードの[d] + Enter 
+- 3色の物理ボタンを押す
+    - ライントレース停止（STATE_IDLE）: 赤ボタン
+    - ライントレース開始（STATE_LINE_TRACE）: 緑ボタン
+- KeiganMotor コントローラ本体のボタンを押す（いずれのKeiganMotorでも可）
+    - ライントレース停止（STATE_IDLE）: 停止（■）ボタン
+    - ライントレース開始（STATE_LINE_TRACE）: 再生（▶）ボタン
+
+
+## プログラムを自動で実行する方法
+以下の手順により Pythonプログラムを OS起動直後に自動実行できます。
+KeiganAGVKit では、本自動起動は実装済みです。
+
+### 自動起動サービス有効化の手順
+#### root権限で以下の場所にkm.serviceファイルを作成
 ```
-export DISPLAY=:0
+$sudo bash
+sudo nano /etc/systemd/system/km.service
+```
+#### km.service の中身は以下とする
+```
+[Unit]
+Description=Keigan Line Tracer
+
+[Service]
+Type=idle
+ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_motor/picam_line_tracer_hsv.py
+User=pi
+Restart=always
+Environment=DISPLAY=:0.0
+StandardOutput=syslog+console
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### 自動起動有効化と再起動
+```
+$sudo systemctl enable km.service
+$sudo reboot
+```
+
+### 自動起動の無効化
+サービスの終了（startの反対）
+```
+$sudo systemctl stop km.service
+```
+
+### 自動起動サービスの確認
+プログラムが起動しない場合など、以下で確認できます。
+
+#### 起動中サービスの確認 
+```
+$systemctl list-units --type=service
+```
+※ すでにstart済みのサービスを重複して起動はできません
+
+#### km.service を変更した場合
+サービスの再読み込みに、以下が必要な場合があります。
+```
+$sudo systemctl reload-daemon
+```
+
+#### 起動しない場合のエラーログ確認。
+Pythonプログラムが起動しない場合は、以下でログを確認できます。
+```
+$ journalctl -e
 ```
 
 ## ライントレースの原理

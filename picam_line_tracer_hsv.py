@@ -99,6 +99,16 @@ class State(Enum):
 
 # KeiganMotor デバイスアドレス定義
 """
+以下の２通りの方法がある
+（１）特定のUSBポート番号を、特定のデバイスアドレスで固定する
+（２）KeiganMotor固有のデバイスアドレスを使用する
+    ターミナルで
+        $ls /dev/serial/by-id/
+    で表示されるデバイスアドレス（デバイスファイル）を記録する
+    usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
+
+（２）KeiganMotor固有のデバイスアドレスを使用する場合
+
 デバイスアドレス（ポート）は固有IDで指定する
 ----------------------
 モーターへの接続
@@ -109,17 +119,32 @@ class State(Enum):
             ex)/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
 """
 
+# KeiganMotor 本体のボタンから、システムのステートをセットする
+def set_state_by_button(event):
+    # ■ 停止ボタンでアイドル状態へ（停止）
+    # ▶ 再生ボタンでライントレース開始
+    if event['event_type'] == 'button':
+        if event['number'] == 2:
+            set_state(State.STATE_IDLE)
+        elif event['number'] == 3:
+            set_state(State.STATE_LINE_TRACE)     
+
+
+def motor_event_cb(event):
+    set_state_by_button(event)
+
 #Machine @Keigan Motor device name
 port_left='/dev/ttyUSB_LeftMotor'
 port_right='/dev/ttyUSB_RightMotor'
 
-twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 412) # KeiganMotor の2輪台車 TODO
+twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 412, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
 
 cur_state = State.STATE_IDLE # システムの現在の状態
 
 eI = 0 # 前回の偏差の積分値を保存しておく
 x = 0 # ライン位置
 x_old = 0 # ラインの前回の位置を保存しておく
+
 
 def set_state(state: State):
     """システムのステートをセットする
@@ -396,10 +421,11 @@ if __name__ == '__main__':
                     eI = 0
                     shouldStop = True # ライントレース停止
                     twd.enable() # ラインロストで disable 状態になっている場合がある
-                    twd.free(3) # 停止、タイムアウト3秒
+                    twd.free(5) # 停止、タイムアウト5秒
+                    twd.move_straight(10, 360, 5)
                     isPausing = True
                     shouldStop = False # ライントレース再開
-                    set_state(State.STATE_IDLE)
+
 
                 else: 
                     blue = get_blue_moment(img)
