@@ -206,16 +206,17 @@ KeiganAGVKit では、本自動起動は実装済みです。
 #### root権限で以下の場所にkm.serviceファイルを作成
 ```
 $sudo bash
-sudo nano /etc/systemd/system/km.service
+$sudo nano /etc/systemd/system/km.service
 ```
 #### km.service の中身は以下とする
+(2020/8/27) ExecStart のリンクが間違っていたので修正しました。(pykeigan_motor -> pykeigan_simple_agv)
 ```
 [Unit]
 Description=Keigan Line Tracer
 
 [Service]
 Type=idle
-ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_motor/picam_line_tracer_hsv.py
+ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_simple_agv/picam_line_tracer_hsv.py
 User=pi
 Restart=always
 Environment=DISPLAY=:0.0
