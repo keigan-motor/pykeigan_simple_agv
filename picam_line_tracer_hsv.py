@@ -21,6 +21,7 @@ from twd import TWD # KeiganMotor での AGV開発を簡単にするためのラ
 
 # ボタン（赤黄緑）
 BUTTON_RED_PIN = 13
+BUTTON_RED_PIN_2 = 6 # ２つ目の赤ボタンを追加
 BUTTON_YELLOW_PIN = 19
 BUTTON_GREEN_PIN = 26
 
@@ -51,16 +52,12 @@ hasPayload = False # 負荷あり: True, 負荷なし: False
 
 # マーカーなどで停止する場合に関する変数
 shouldStop = False # マーカー発見等で停止すべき場合 True
-isResuming = False # 停止→ライントレース動作再開までの判定状態
 RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
 resumeCounter = 0 # 動作再開用のカウンタ 
 # ドッキング中であることを示す 
 isDocking = False # ドッキング中なら True
 dockingCounter = 0 # ドッキング中ロストカウンタ
 DOCKING_THRESHOLD = 5 # dockingCounter がこの回数以上の場合、moveStraight でC箱を実際につかみにいく
-
-# 一時停止状態であることを示す（目的地に到着したなどの場合で折り返すまで待機状態）
-isPausing = False # 一時停止状態である
 
 # ラインロスト（OFFにしている）
 is_lost = False # Trueならば、ラインがロストしている
@@ -97,6 +94,22 @@ class State(Enum):
     STATE_LINE_TRACE = 1 # ライントレーサー
     STATE_DEBUG = 10 # デバッグ用
 
+
+# KeiganMotor 本体のボタンから、システムのステートをセットする
+def set_state_by_button(event):
+    # ■ 停止ボタンでアイドル状態へ（停止）
+    # ▶ 再生ボタンでライントレース開始
+    if event['event_type'] == 'button':
+        if event['number'] == 2:
+            set_state(State.STATE_IDLE)
+        elif event['number'] == 3:
+            set_state(State.STATE_LINE_TRACE)     
+
+# KeiganMotor 本体のボタンが押されたときのコールバック
+def motor_event_cb(event):
+    set_state_by_button(event)
+
+
 # KeiganMotor デバイスアドレス定義
 """
 以下の２通りの方法がある
@@ -119,25 +132,11 @@ class State(Enum):
             ex)/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
 """
 
-# KeiganMotor 本体のボタンから、システムのステートをセットする
-def set_state_by_button(event):
-    # ■ 停止ボタンでアイドル状態へ（停止）
-    # ▶ 再生ボタンでライントレース開始
-    if event['event_type'] == 'button':
-        if event['number'] == 2:
-            set_state(State.STATE_IDLE)
-        elif event['number'] == 3:
-            set_state(State.STATE_LINE_TRACE)     
+# KeiganMotor デバイスアドレス（上記参照）
+port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGOA-if00-port0'
+port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KVJM-if00-port0'
 
-
-def motor_event_cb(event):
-    set_state_by_button(event)
-
-#Machine @Keigan Motor device name
-port_left='/dev/ttyUSB_LeftMotor'
-port_right='/dev/ttyUSB_RightMotor'
-
-twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 412, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
+twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 375, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
 
 cur_state = State.STATE_IDLE # システムの現在の状態
 
@@ -333,12 +332,14 @@ if __name__ == '__main__':
     GPIO.setmode(GPIO.BCM) 
 
     # ボタン入力の設定
-    GPIO.setup(BUTTON_RED_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
+    GPIO.setup(BUTTON_RED_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(BUTTON_RED_PIN_2, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
     GPIO.setup(BUTTON_YELLOW_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
     GPIO.setup(BUTTON_GREEN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
 
     # ボタンを押したときのコールバックを登録
     GPIO.add_event_detect(BUTTON_RED_PIN, GPIO.FALLING, callback=red_callback, bouncetime=50)
+    GPIO.add_event_detect(BUTTON_RED_PIN_2, GPIO.FALLING, callback=red_callback, bouncetime=50)
     GPIO.add_event_detect(BUTTON_YELLOW_PIN, GPIO.FALLING, callback=yellow_callback, bouncetime=50)
     GPIO.add_event_detect(BUTTON_GREEN_PIN, GPIO.FALLING, callback=green_callback, bouncetime=50)
 
@@ -422,9 +423,12 @@ if __name__ == '__main__':
                     shouldStop = True # ライントレース停止
                     twd.enable() # ラインロストで disable 状態になっている場合がある
                     twd.free(5) # 停止、タイムアウト5秒
-                    twd.move_straight(10, 360, 5)
-                    isPausing = True
-                    shouldStop = False # ライントレース再開
+                    #twd.move_straight(10, 360, 5)
+                    twd.pivot_turn(10, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
+                    
+                    # 以下を有効にすると、緑（白）ボタンを押すまで動作再開しない
+                    # set_state(State.STATE_IDLE) 
+                    # shouldStop = False # ライントレース再開
 
 
                 else: 
