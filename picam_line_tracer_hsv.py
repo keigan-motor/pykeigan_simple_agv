@@ -40,10 +40,10 @@ HSV値の範囲の色をラインとして認識する
 # 領域分離を行った後、この面積を超えた領域のみ処理を行う
 LINE_AREA_THRESHOLD = 7000 # ライン検知用の面積の閾値
 LINE_CROSS_PASS_AREA_THRESHOLD = 20000 # ラインを横切った場合に前回のライン位置を採用するための面積の閾値
-STOP_MARKER_AREA_THRESHOLD = 40000 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
+STOP_MARKER_AREA_THRESHOLD = 30000 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
 
 RUN_CMD_INTERVAL = 0.05 # 0.1秒ごとに処理を行う
-RUN_BASE_RPM = 50
+RUN_BASE_RPM = 100
 STOP_AFTER_RPM = 10
 STOP_AFTER_RPM1 = 5
 
@@ -52,6 +52,7 @@ hasPayload = False # 負荷あり: True, 負荷なし: False
 
 # マーカーなどで停止する場合に関する変数
 shouldStop = False # マーカー発見等で停止すべき場合 True
+isResuming = False # 停止→ライントレース動作再開までの判定状態
 RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
 resumeCounter = 0 # 動作再開用のカウンタ 
 # ドッキング中であることを示す 
@@ -66,6 +67,8 @@ LOST_THRESHOLD = 7 # ラインをロストしたとみなす判定の閾値
 lost_total_count = 0 # ラインをロストした回数の合計
 LOST_TOTAL_THRESHOLD = 5 # ラインをロストした回数の合計がこの値以上になると、AGVはアイドル状態に戻る
 
+# PID limit
+DELTA_MAX = 25
 # PIDコントローラのゲイン値：負荷なし
 steer_p = 0.05 # 比例
 steer_i = 0.0025 # 積分
@@ -133,10 +136,11 @@ def motor_event_cb(event):
 """
 
 # KeiganMotor デバイスアドレス（上記参照）
-port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGOA-if00-port0'
-port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KVJM-if00-port0'
+port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KI4B-if00-port0'
+port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGQV-if00-port0'
 
-twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 375, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
+
+twd = TWD(port_left, port_right, wheel_d = 50.8, tread = 128, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
 
 cur_state = State.STATE_IDLE # システムの現在の状態
 
@@ -204,9 +208,22 @@ def pid_controller():
     eI = eI + RUN_CMD_INTERVAL * x # 偏差 積分
     eD = (x - x_old) / RUN_CMD_INTERVAL # 偏差 微分
     delta_v = gain_p * x + gain_i * eI + gain_d * eD
+    
+    # アンチワインドアップ
+    if delta_v > DELTA_MAX:
+        eI -= (delta_v - DELTA_MAX) / gain_i
+        if eI < 0: eI = 0
+        delta_v = DELTA_MAX
+    elif delta_v < - DELTA_MAX:
+        eI -= (delta_v + DELTA_MAX) / gain_i
+        if eI > 0:
+            eI = 0
+        delta_v = - DELTA_MAX
+    
+    
     x_old = x
     rpm = (RUN_BASE_RPM + delta_v, RUN_BASE_RPM - delta_v)
-    #print("x =", x, ", rpm =", rpm)
+    print("x =", x, ", rpm =", rpm)
     return rpm
         
     
@@ -366,8 +383,8 @@ if __name__ == '__main__':
     # ※ OpenCVでの H は、0-179 しか受け付けないので、Hは 0-360° 表記の半分にしなければならない
 
     # PIDコントローラのゲイン調整
-    cv2.createTrackbar("Gain_P", "Main", 10, 100, nothing)
-    cv2.createTrackbar("Gain_I", "Main", 5, 100, nothing)
+    cv2.createTrackbar("Gain_P", "Main", 7, 100, nothing) # 10
+    cv2.createTrackbar("Gain_I", "Main", 4, 100, nothing) # 5
     cv2.createTrackbar("Gain_Load_P", "Main", 15, 100, nothing)
     cv2.createTrackbar("Gain_Load_I", "Main", 7, 100, nothing)
 
