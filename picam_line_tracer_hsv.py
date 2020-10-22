@@ -16,12 +16,17 @@ import numpy as np # numpy 計算が得意
 from enum import Enum # 列挙子
 import RPi.GPIO as GPIO  # GPIOにアクセスするライブラリ
 import csv # CSVファイルを取り扱う（読み書き）ライン検知のキャリブレーションデータを作製
+import os
+
+# KeiganMotor
+from pykeigan import usbcontroller
+from pykeigan import utils
 
 from twd import TWD # KeiganMotor での AGV開発を簡単にするためのライブラリ。メインファイルと同じフォルダに、twd.py を置いて下さい。
 
 # ボタン（赤黄緑）
+BUTTON_RED_PIN_2 = 6
 BUTTON_RED_PIN = 13
-BUTTON_RED_PIN_2 = 6 # ２つ目の赤ボタンを追加
 BUTTON_YELLOW_PIN = 19
 BUTTON_GREEN_PIN = 26
 
@@ -52,12 +57,16 @@ hasPayload = False # 負荷あり: True, 負荷なし: False
 
 # マーカーなどで停止する場合に関する変数
 shouldStop = False # マーカー発見等で停止すべき場合 True
+isResuming = False # 停止→ライントレース動作再開までの判定状態
 RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
 resumeCounter = 0 # 動作再開用のカウンタ 
 # ドッキング中であることを示す 
 isDocking = False # ドッキング中なら True
 dockingCounter = 0 # ドッキング中ロストカウンタ
 DOCKING_THRESHOLD = 5 # dockingCounter がこの回数以上の場合、moveStraight でC箱を実際につかみにいく
+
+# 一時停止状態であることを示す（目的地に到着したなどの場合で折り返すまで待機状態）
+isPausing = False # 一時停止状態である
 
 # ラインロスト（OFFにしている）
 is_lost = False # Trueならば、ラインがロストしている
@@ -94,22 +103,6 @@ class State(Enum):
     STATE_LINE_TRACE = 1 # ライントレーサー
     STATE_DEBUG = 10 # デバッグ用
 
-
-# KeiganMotor 本体のボタンから、システムのステートをセットする
-def set_state_by_button(event):
-    # ■ 停止ボタンでアイドル状態へ（停止）
-    # ▶ 再生ボタンでライントレース開始
-    if event['event_type'] == 'button':
-        if event['number'] == 2:
-            set_state(State.STATE_IDLE)
-        elif event['number'] == 3:
-            set_state(State.STATE_LINE_TRACE)     
-
-# KeiganMotor 本体のボタンが押されたときのコールバック
-def motor_event_cb(event):
-    set_state_by_button(event)
-
-
 # KeiganMotor デバイスアドレス定義
 """
 以下の２通りの方法がある
@@ -132,11 +125,25 @@ def motor_event_cb(event):
             ex)/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
 """
 
-# KeiganMotor デバイスアドレス（上記参照）
-port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGOA-if00-port0'
-port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KVJM-if00-port0'
+# KeiganMotor 本体のボタンから、システムのステートをセットする
+def set_state_by_button(event):
+    # ■ 停止ボタンでアイドル状態へ（停止）
+    # ▶ 再生ボタンでライントレース開始
+    if event['event_type'] == 'button':
+        if event['number'] == 2:
+            set_state(State.STATE_IDLE)
+        elif event['number'] == 3:
+            set_state(State.STATE_LINE_TRACE)     
 
-twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 375, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
+
+def motor_event_cb(event):
+    set_state_by_button(event)
+
+#Machine @Keigan Motor device name
+port_left='/dev/ttyUSB_LeftMotor'
+port_right='/dev/ttyUSB_RightMotor'
+
+twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 300, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
 
 cur_state = State.STATE_IDLE # システムの現在の状態
 
@@ -144,6 +151,11 @@ eI = 0 # 前回の偏差の積分値を保存しておく
 x = 0 # ライン位置
 x_old = 0 # ラインの前回の位置を保存しておく
 
+# 搬送ローラー
+roller = usbcontroller.USBController('/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KHK2-if00-port0',False)#モーターのアドレス 参照 usb-simple-connection.py
+roller.enable_action()
+roller.set_speed(1)
+roller.stop_motor()
 
 def set_state(state: State):
     """システムのステートをセットする
@@ -216,6 +228,9 @@ def red_callback(gpio_pin):
     if GPIO.input(gpio_pin) == GPIO.LOW:
         set_state(State.STATE_IDLE)
         print("red pushed")
+        time.sleep(3)
+        if GPIO.input(gpio_pin) == GPIO.LOW:
+            os.system("sudo shutdown -h now")
 
 def yellow_callback(gpio_pin):
     time.sleep(0.05)
@@ -407,65 +422,63 @@ if __name__ == '__main__':
             hsvImg = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV) # HSV画像
             img = cv2.medianBlur(hsvImg,5)
 
-            # 赤重心の検出
-            red = get_red_moment(img)
-                        
-            isRedMarker = red[0] # 赤マーカーが存在する場合、True
             isLineExist = False # ラインが存在する場合、True
 
             if cur_state == State.STATE_LINE_TRACE or cur_state == State.STATE_DEBUG:
 
-                if isRedMarker: # 赤マーカーを検知したら、停止して処理（TODO、未使用？）
-                    stop_marker_count += 1
-                    print("Detected Stop Marker:", stop_marker_count)
-                    x = 0
-                    eI = 0
-                    shouldStop = True # ライントレース停止
-                    twd.enable() # ラインロストで disable 状態になっている場合がある
-                    twd.free(5) # 停止、タイムアウト5秒
-                    #twd.move_straight(10, 360, 5)
-                    twd.pivot_turn(10, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
-                    
-                    # 以下を有効にすると、緑（白）ボタンを押すまで動作再開しない
-                    # set_state(State.STATE_IDLE) 
-                    # shouldStop = False # ライントレース再開
+                blue = get_blue_moment(img)
+                isLineExist = blue[0]
+                lineArea = blue[2]
+                if isLineExist:
+                    lost_count = 0 # ラインロストのカウントをリセット
+                    lost_total_count = 0 # ライントータルロストのカウントをリセット
+                    if lineArea > STOP_MARKER_AREA_THRESHOLD:
+                        # 折り返し 処理
+                        stop_marker_count += 1
+                        print("Detected Stop Marker:", stop_marker_count)
+                        x = 0
+                        eI = 0
+                        shouldStop = True # ライントレース停止
+                        # 搬送ローラー駆動開始
+                        roller.enable_action()
+                        roller.set_speed(utils.rpm2rad_per_sec(30))
+                        roller.move_by_dist(utils.deg2rad(-1080))
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.stop(10) # 停止、タイムアウト5秒
+                        # roller.disable_action() # 搬送ローラー停止
+                        #twd.move_straight(10, 360, 5)
+                        twd.pivot_turn(10, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
+                        #set_state(State.STATE_IDLE)
+                        isPausing = True
+                        shouldStop = False # ライントレース再開
 
-
-                else: 
-                    blue = get_blue_moment(img)
-                    isLineExist = blue[0]
-                    lineArea = blue[2]
-                    if isLineExist:
-                        lost_count = 0 # ラインロストのカウントをリセット
-                        lost_total_count = 0 # ライントータルロストのカウントをリセット
-                        if lineArea > LINE_CROSS_PASS_AREA_THRESHOLD:
-                            pass
-                        else:
-                            shouldStop = False
-                            x = blue[1][0] - 320 # ラインのx位置を更新
-                            twd.enable()
                     else:
-                        lost_count += 1 # ロストしたカウントアップ
-                        if lost_count >= LOST_THRESHOLD:
-                            # 一定回数以上、ラインロスト判定になると、AGVはアイドル状態に戻る
-                            if lost_total_count >= LOST_TOTAL_THRESHOLD:
-                                if cur_state == State.STATE_LINE_TRACE:
-                                    set_state(State.STATE_IDLE)
-                                lost_total_count = 0
-                            else:
-                                # ラインロスト処理
-                                lost_total_count += 1
-                                print("Line not Exist")
-                                x = 0
-                                eI = 0
-                                shouldStop = True # ライントレース停止
-                                print("Back")
-                                # 半回転戻る TODO
-                                if cur_state == State.STATE_LINE_TRACE:
-                                    twd.move_straight(STOP_AFTER_RPM, -180, 5) # 1回転=360°、15秒タイムアウトで前進 hsv3:440->510
-                                print("Resume Line Trace")
-                                #shouldStop = False # ライントレース再開
-                    # print("x, eI:", x, eI)
+                        shouldStop = False
+                        x = blue[1][0] - 320 # ラインのx位置を更新
+                        twd.enable()
+                else:
+                    lost_count += 1 # ロストしたカウントアップ
+                    if lost_count >= LOST_THRESHOLD:
+                        # 一定回数以上、ラインロスト判定になると、AGVはアイドル状態に戻る
+                        if lost_total_count >= LOST_TOTAL_THRESHOLD:
+                            if cur_state == State.STATE_LINE_TRACE:
+                                set_state(State.STATE_IDLE)
+                            lost_total_count = 0
+                        else:
+                            # ラインロスト処理
+                            lost_total_count += 1
+                            print("Line not Exist")
+                            x = 0
+                            eI = 0
+                            shouldStop = True # ライントレース停止
+                            print("Back")
+                            # 半回転戻る TODO
+                            if cur_state == State.STATE_LINE_TRACE:
+                                twd.move_straight(STOP_AFTER_RPM, -180, 5) # 1回転=360°、15秒タイムアウトで前進 hsv3:440->510
+                            print("Resume Line Trace")
+                            #shouldStop = False # ライントレース再開
+                # print("x, eI:", x, eI)
+                    
 
 
             cv2.imshow("Main", hsvImg)
