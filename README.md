@@ -235,13 +235,17 @@ $sudo bash
 $sudo nano /etc/systemd/system/km.service
 ```
 ### km.service の中身は以下とする
+以下の２つのプログラムを自動起動する
+- picam_line_tracer_hsv.py # ライントレーサーのメインプログラム
+- shutdown.py # 赤ボタン長押しでラズパイを安全にシャットダウンする
+
 ```
 [Unit]
 Description=Keigan Line Tracer
 
 [Service]
 Type=idle
-ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_motor/picam_line_tracer_hsv.py
+ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_motor/picam_line_tracer_hsv.py /home/pi/Desktop/pykeigan_simple_agv/shutdown.py
 User=pi
 Restart=always
 Environment=DISPLAY=:0.0

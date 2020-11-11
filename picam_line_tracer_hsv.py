@@ -40,10 +40,10 @@ HSV値の範囲の色をラインとして認識する
 # 領域分離を行った後、この面積を超えた領域のみ処理を行う
 LINE_AREA_THRESHOLD = 7000 # ライン検知用の面積の閾値
 LINE_CROSS_PASS_AREA_THRESHOLD = 20000 # ラインを横切った場合に前回のライン位置を採用するための面積の閾値
-STOP_MARKER_AREA_THRESHOLD = 40000 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
+STOP_MARKER_AREA_THRESHOLD = 30000 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
 
 RUN_CMD_INTERVAL = 0.05 # 0.1秒ごとに処理を行う
-RUN_BASE_RPM = 50
+RUN_BASE_RPM = 40
 STOP_AFTER_RPM = 10
 STOP_AFTER_RPM1 = 5
 
@@ -52,6 +52,7 @@ hasPayload = False # 負荷あり: True, 負荷なし: False
 
 # マーカーなどで停止する場合に関する変数
 shouldStop = False # マーカー発見等で停止すべき場合 True
+isResuming = False # 停止→ライントレース動作再開までの判定状態
 RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
 resumeCounter = 0 # 動作再開用のカウンタ 
 # ドッキング中であることを示す 
@@ -107,6 +108,7 @@ def set_state_by_button(event):
 
 # KeiganMotor 本体のボタンが押されたときのコールバック
 def motor_event_cb(event):
+    #print("event")
     set_state_by_button(event)
 
 
@@ -133,10 +135,10 @@ def motor_event_cb(event):
 """
 
 # KeiganMotor デバイスアドレス（上記参照）
-port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGOA-if00-port0'
-port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KVJM-if00-port0'
+port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KFFE-if00-port0'
+port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGLN-if00-port0'
 
-twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 375, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
+twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 640, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
 
 cur_state = State.STATE_IDLE # システムの現在の状態
 
@@ -424,7 +426,7 @@ if __name__ == '__main__':
                     twd.enable() # ラインロストで disable 状態になっている場合がある
                     twd.free(5) # 停止、タイムアウト5秒
                     #twd.move_straight(10, 360, 5)
-                    twd.pivot_turn(10, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
+                    twd.pivot_turn(10, 180, 20) # TWD初期化時、tread を正確に設定していない場合、ズレる
                     
                     # 以下を有効にすると、緑（白）ボタンを押すまで動作再開しない
                     # set_state(State.STATE_IDLE) 
