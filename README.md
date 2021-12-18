@@ -117,7 +117,7 @@ sudo apt-get install libgtk2.0-dev
 
 device_test フォルダ内の、picamera_test.py を実行します。（picameraのみ対応）
 ```
-$python3 picamera_test.py
+python3 picamera_test.py
 ```
 通常、レンズ部分を手で回転させることにより、手動でピントを合わせることができます。実際にラインを撮影し、動画が鮮明になるように調整して下さい。
 
@@ -251,8 +251,7 @@ AGVKit では、本自動起動は実装済みです。
 ## 自動起動サービス有効化の手順
 ### root権限で以下の場所に km.service ファイルを作成します
 ```
-$sudo bash
-$sudo nano /etc/systemd/system/km.service
+sudo nano /etc/systemd/system/km.service
 ```
 ### km.service について
 #### 機能
@@ -299,14 +298,14 @@ WantedBy=multi-user.target
 
 ### 自動起動有効化と再起動
 ```
-$sudo systemctl enable km.service
-$sudo reboot
+sudo systemctl enable km.service
+sudo reboot
 ```
 
 ## 自動起動の無効化
 サービスの終了（startの反対）
 ```
-$sudo systemctl stop km.service
+sudo systemctl stop km.service
 ```
 
 ## 自動起動サービスの確認
@@ -314,20 +313,20 @@ $sudo systemctl stop km.service
 
 ### 起動中サービスの確認 
 ```
-$systemctl list-units --type=service
+systemctl list-units --type=service
 ```
 ※ すでにstart済みのサービスを重複して起動はできません
 
 ### km.service を変更した場合
 サービスの再読み込みに、以下が必要な場合があります。
 ```
-$sudo systemctl reload-daemon
+sudo systemctl reload-daemon
 ```
 
 ### 起動しない場合のエラーログ確認。
 Pythonプログラムが起動しない場合は、以下でログを確認できます。
 ```
-$ journalctl -e
+journalctl -e
 ```
 
 # ライントレースの原理
