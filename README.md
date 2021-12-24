@@ -1,87 +1,150 @@
-Simple line tracer AGV framework by KeiganMotor
+Simple line tracer AGV by KeiganMotor
 ==============================================
 
 # はじめに
-KeiganMotor，Raspberry Pi, PiCamera または USBカメラ, を使用して、USBモバイルバッテリーで動作するライントレーサーAGVを作ることができます。
+KeiganMotor，Raspberry Pi, USBカメラ または PiCamera, を使用して、USBモバイルバッテリーで動作するライントレーサーAGVを作ることができます。
 
-青色のテープをトレースし、赤色のテープを検知すると停止します。（青色のテープで停止することもできます）
+青色のテープをライントレースします。
+
+arucoマーカーや赤色のテープを検知し、停止などを実行することができます。
+
+KeiganMotor を追加することにより、搬送物の積み下ろしなどの応用が可能です。
+
+![AGV上部連携](/img/AGVLoader.gif) 
+
+青色または青色に近い床の場合は、動作しない場合があります。
+
+その場合、黄色のラインテープで動作する場合があります。（HSV値の調整が必要です）
 
 # KeiganAGV Kit
 本AGVシステムを製作するために必要なパーツをキット化したものです。
 動作に必要なソフトウェアはセットアップされています。
 
-- 製品ページ: 2022/1月リリース予定
+![KeiganAGV Kit](/img/AGVKit_1.jpg) 
 
-（参考）
+- 製品ページ: 2022/1月リリース予定
 - 製品サイト: https://keigan-motor.com
 - ドキュメント: https://docs.keigan-motor.com
 
+
 # 必要条件
 ## ハードウェア
-- Raspberry Pi 3B+, 3A+ または 4B
+- Raspberry Pi 3B+, 3A+ または 4B（4Bの場合はUSBハブ必須）
 - PiCamera または USBカメラ
     - https://picamera.readthedocs.io/
-- KM-1 AGVKit
+- KeiganMotor 駆動輪 2個分
+- AGVフレーム、キャスターなど（5kg 未満推奨）
 
-## モーターを使用して製作する場合
+### USBカメラ
+以下の機種を推奨します。
+- Buffalo BSW500MBK（広角120°モデル）
+
+#### カメラの設置例
+例えば、AGV前方に、カメラレンズ 床面からの高さ 125mm 斜め45°下を投射する形で設置します。
+
+カメラの画角により異なりますので、調整して下さい。
+
+### KeiganMotor 
 以下を使用します。
 - KeiganMotor KM-1S-M6829 ホイールキット
     - https://keigan-motor.com/km-1s/
 
-## ソフトウェア
-- Linux 系 OS
+- ファームウェア を ver 2.73B 以降にアップデートして下さい。
+    - https://docs.keigan-motor.com/firmware/download
+
+
+## ソフトウェア要件
+- Raspberry Pi OS
 - Python >= 3.5 (recommended) or 2.7
-- pykeigan_motor >= 2.2.5 
+- pykeigan_motor >= 2.3.1
     - https://github.com/keigan-motor/pykeigan_motor
 - OpenCV 
     - opencv-contrib-python 4.3
 
-# 履歴
-- 2021/12/18 USBカメラ を追加
+
+### Raspberry Pi OS 
+バージョンは以下を対象とします。
+- Distributor ID: Raspbian
+- Description:    Raspbian GNU/Linux 10 (buster)
+- Release:        10
+- Codename:       buster
+
+# バージョン履歴
+- 2021/12/23 ver. 1.1.1 Latest
+    - systemd による自動起動の方法を変更（シェル→python）
+    - USBカメラ使用時の動作、検知性能の改善
+- 2021/12/18 ver. 1.1.0
+    - USBカメラ を追加
 
 # 準備
-## ラインテープ
-### ラインテープの貼り方
+## 画像認識のためのマーカー
+### 1. ラインテープ
+#### ラインテープの貼り方
 ライントレース用のラインは、50mm幅の、青ラインテープを使います。
-
 停止用の赤テープも含めて、monotaro等で購入可能です。
-https://www.monotaro.com/g/01259483/
+- グローブ社 ラインテープ 50mm×33m
+    - https://www.monotaro.com/g/01259483/
+
+引っ張りながら貼ることにより、曲線も綺麗に貼ることができます。
+曲線の場合は、500mm 以上の半径 R を取ってください。
+
 
 ***停止用のテープは、青ラインに対して垂直に、400mm 以上の長さを貼ること。***
 
-## PC側
+### 2. aruco マーカー
+オープンソースの2次元マーカーです。
+OpenCV の contrib パッケージに含まれます。
+以下のサイトから印刷することが可能です。
+- https://chev.me/arucogen/
+
+
+![stop to see aruco marker](/img/aruco.jpg) 
+
+
+#### 注意点
+- 床面に貼る場合、上から透明の保護テープを貼ることを推奨します。
+- 60mm～100mm 角のサイズを推奨しますが、検知失敗する場合はサイズ調整やカメラの高さ変更を実施して下さい。
+
+## PC 側の準備
 ### VNC Viewer のダウンロード
 お使いのPCに、VNC Viewer をダウンロードします。
 
-## Raspberry Pi 側
-KeiganAGV Kit では、本「準備」に含まれる内容はSDカードに全てセットアップ済みです。
+## Raspberry Pi 側の準備
+KeiganAGV Kit では、本「準備」に含まれるソフトウェアはSDカードに全てセットアップ済みです。
 
-### 接続
+Wi-Fi の設定は必要となります。
+
+### インターフェイス機器の接続
 Raspberry Pi に HDMIディスプレイ、マウス・キーボード を接続します。
+VNC　Viewer でリモート接続後は、不要です。
 
 ### PiCamera と VNC Viewer の有効化
 Raspberry Pi デスクトップ画面のメニューボタンから「設定」＞「Raspberry Piの設定」を選択します。
 
-「インターフェイス」タブから、
+「インターフェイス」タブから、以下の「有効」を選択し、[OK] をクリックします。
 
-- カメラ
+- カメラ（PiCameraの場合のみ）
 - VNC
 
-ともに 「有効」を選択し、[OK] をクリックします。
 
 ### Wi-Fi の設定
 お使いのPCと同じ Wi-Fi アクセスポイント に Raspberry Pi の接続設定を行って下さい。
 
 右下のタスクトレイから、VNC Viewerのアイコンをクリックし、IPアドレスをメモします。
 
-再起動後、PiCamera と VNC でのリモートログインが有効になります。
+再起動後、PiCamera と VNC でのリモート接続が有効になります。
+以後は、ご使用のPCからリモート開発が可能です。
 
 ### OpenCV のインストール
 バージョンは 4.1.0.25 を指定して下さい。
+
+Raspberry Pi OS のバージョンは上記参照下さい。
+
 ```
 pip3 install opencv-contrib-python==4.1.0.25
 ```
-上記だけで動作しない場合、以下を全てインストールします。
+上記だけで cv2（OpenCV）が動作しない場合、以下を全てインストールします。
+
 ***必ず 1個ずつ行うこと。一気にコピペしてやると[Y]入力のところで失敗します。***
 
 ```
@@ -111,19 +174,41 @@ sudo apt install libqt4-test
 sudo apt-get install libgtk2.0-dev
 ```
 
-### PiCamera のフォーカス合わせ
-予め PiCamera のフォーカスを合わせて下さい。
+### KeiganMotor Python ライブラリのインストール
+pykeigan_motor 2.3.1 以降をご使用下さい。
+- https://github.com/keigan-motor/pykeigan_motor
+
+```
+pip3 install pykeigan_motor
+```
+
+### プログラムのダウンロード
+本リポジトリのzipファイルをダウンロードし、解凍します。KeiganAGVKitでは、デスクトップに予め設置しています。
+
+## デバイスの準備
+
+### カメラのフォーカス合わせ
+予め PiCamera または USBカメラ のフォーカスを合わせて下さい。
+- AGVKit 付属の USBカメラは調整できません。
+
+レンズ鏡筒部を手で回すことにより調整できる場合があります。
+
 フォーカスが合っていない場合、脱線の原因となります。
 
-device_test フォルダ内の、picamera_test.py を実行します。（picameraのみ対応）
+カメラ単体の確認は、device_test フォルダ内の、usbcamera_test.py または picamera_test.py を実行します。
+```
+python3 usbcamera_test.py
+```
+または
 ```
 python3 picamera_test.py
 ```
-通常、レンズ部分を手で回転させることにより、手動でピントを合わせることができます。実際にラインを撮影し、動画が鮮明になるように調整して下さい。
 
+実際にラインを撮影し、動画が鮮明になるように調整して下さい。
 
 ### KeiganMotor の接続とデバイスアドレス
 Python から KeiganMotor を USB経由でコントロールするためには、デバイスアドレス（デバイスファイル名）の指定が必要です。
+
 KeiganMotor を USBポートのどこにつないでも動作するため、通常は以下の手順 A を推奨します。
 
 #### A. KeiganMotor固有のデバイスアドレスを使用する (推奨)
@@ -187,18 +272,24 @@ lrwxrwxrwx 1 root root         7  7月 22 19:36 /dev/ttyUSB_RightMotor -> ttyUSB
 本手順を、KeiganMotor すべてに対して行います。
 
 
-# プログラムの実行
-## プログラムのダウンロード
-本リポジトリのzipファイルをダウンロードし、解凍します。
+### モーターのチェック
+KeiganMotor の動作チェックを行います。
 
-KeiganAGV Kit では、Desktop に pykeigan_simple_agv フォルダを予め設置しています。
+device_test フォルダ内の、motor_test.py を実行します。
 
-## プログラムの実行
-Raspberry Pi に直接 HDMIディスプレイとキーボードを接続するか、VNC Viewer で Raspberry Pi に接続します。
 
-以下をターミナルで実行します。
+# ライントレースプログラムの実行
+
+***KeiganAGVKit では、本プログラムは起動時に自動実行するように設定しています（後述）。***
+
+
+VNC Viewer で Raspberry Pi にリモート接続します。
+
+以下をターミナル または Thonny で実行します。
+
+ターミナルの方が実行速度が早くなります。
 ```
-cd Desktop/pykeigan_simple_agv
+cd /home/pi/Desktop/pykeigan_simple_agv
 ```
 
 ### PiCamera の場合
@@ -220,7 +311,6 @@ Keigan Line Tracer Start !
 キーボードの [t] + Enter または 緑ボタン: ライントレーサー STATE_LINE_TRACE
 キーボードの [d] + Enter :デバッグ用 STATE_DEBUG
 ```
-***KeiganAGVKit では、本プログラムは起動時に自動実行するように設定しています（後述）。***
 
 ## ライントレーサーの開始と停止
 以下の3通りの方法で、ライントレースの開始と停止をコントロールできます。
@@ -228,12 +318,22 @@ Keigan Line Tracer Start !
     - ライントレース停止（STATE_IDLE）: キーボードの[s] + Enter
     - ライントレース開始（STATE_LINE_TRACE）: キーボードの[t] + Enter
     - デバッグ用:ログを出力して画像のみ確認（STATE_DEBUG）: キーボードの[d] + Enter 
-- 3色の物理ボタンを押す
+- 物理ボタンを押す
     - ライントレース停止（STATE_IDLE）: 赤ボタン
-    - ライントレース開始（STATE_LINE_TRACE）: 緑ボタン
+    - ライントレース開始（STATE_LINE_TRACE）: 白または緑ボタン
 - KeiganMotor コントローラ本体のボタンを押す（いずれのKeiganMotorでも可）
     - ライントレース停止（STATE_IDLE）: 停止（■）ボタン
     - ライントレース開始（STATE_LINE_TRACE）: 再生（▶）ボタン
+
+## 検知率を向上させたい場合
+- 共通
+    - カメラの位置・角度を調整する
+- ライントレースカーブ時のロスト
+    - 曲線の半径 R を大きくとる
+- Arucoマーカー
+    - マーカーのサイズを変更する 
+    - 反射の小さいマットな印刷にする
+
 
 ## プログラムの終了
 ### ターミナルから起動した場合 
@@ -242,61 +342,49 @@ Keigan Line Tracer Start !
 ### ターミナルから名前を指定して強制終了する
 名前を指定してプロセスを強制終了する
 
-pkill -f picam_line_tracer
+pkill -f _line_tracer
 
 # プログラムの自動実行
 以下の手順により Pythonプログラムを OS起動直後に自動実行できます。
-AGVKit では、本自動起動は実装済みです。
+AGVKit では、本自動起動は設定済みです。
 
 ## 自動起動サービス有効化の手順
-### root権限で以下の場所に km.service ファイルを作成します
+root権限で以下の場所に km.service ファイルを作成します
 ```
 sudo nano /etc/systemd/system/km.service
 ```
-### km.service について
-#### 機能
-以下の２つのプログラムを自動起動します
-- picam_line_tracer_hsv.py # ライントレーサーのメインプログラム
+#### km.service ファイルの編集
+中身を以下とします。start.py を自動起動設定します。
+
+```
+[Unit]
+Description=Keigan Line Tracer
+
+[Service]
+Type=idle
+ExecStart=/usr/bin/python3  /home/pi/Desktop/pykeigan_simple_agv/start.py
+User=pi
+Restart=always
+RestartSec=10
+Environment=DISPLAY=:0.0
+StandardOutput=syslog+console
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 注意点
+ver 1.1.1 以降、本リポジトリのデフォルトはUSBカメラ用 usbcam_line_tracer_hsv.py の起動設定になっています。
+
+PiCamera を使用する場合は、start.py を編集し、usbcam_line_tracer_hsv.py から picam_line_tracer_hsv.py に変更して下さい。
+
+### start.py で起動されるプログラム
+- *_line_tracer_hsv.py # ライントレーサーのメインプログラム
 - shutdown.py # 赤ボタン長押しでラズパイを安全にシャットダウンする
 
-km.service ファイルの中身は以下として下さい。
-#### PiCamera の場合
-```
-[Unit]
-Description=Keigan Line Tracer
-
-[Service]
-Type=idle
-ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_simple_agv/picam_line_tracer_hsv.py 
-ExecStartPost=/usr/bin/python3 /home/pi/Desktop/pykeigan_simple_agv/shutdown.py
-User=pi
-Restart=always
-Environment=DISPLAY=:0.0
-StandardOutput=syslog+console
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### USBCamera の場合
-```
-[Unit]
-Description=Keigan Line Tracer
-
-[Service]
-Type=idle
-ExecStart=/usr/bin/python3 /home/pi/Desktop/pykeigan_simple_agv/usbcam_line_tracer_hsv.py 
-ExecStartPost=/usr/bin/python3 /home/pi/Desktop/pykeigan_simple_agv/shutdown.py
-User=pi
-Restart=always
-Environment=DISPLAY=:0.0
-StandardOutput=syslog+console
-
-[Install]
-WantedBy=multi-user.target
-```
 
 ### 自動起動有効化と再起動
+以下で有効化し、再起動します。問題がなければ自動起動します。
 ```
 sudo systemctl enable km.service
 sudo reboot
@@ -305,11 +393,8 @@ sudo reboot
 ## 自動起動の無効化
 サービスの終了（startの反対）
 ```
-sudo systemctl stop km.service
+sudo systemctl disable km.service
 ```
-
-## 自動起動サービスの確認
-プログラムが起動しない場合など、以下で確認できます。
 
 ### 起動中サービスの確認 
 ```
@@ -324,7 +409,7 @@ sudo systemctl reload-daemon
 ```
 
 ### 起動しない場合のエラーログ確認。
-Pythonプログラムが起動しない場合は、以下でログを確認できます。
+Pythonプログラムが自動起動しない場合は、以下でログを確認できます。
 ```
 journalctl -e
 ```
@@ -368,7 +453,7 @@ hasPayload = True
 とすることにより、負荷ありのゲインが採用される
 ```python
 # PIDコントローラのゲイン値：負荷なし
-steer_p = 0.05 # 比例
+steer_p = 0.075 # 比例
 steer_i = 0.0025 # 積分
 steer_d = 0 # 微分
 # PIDコントローラのゲイン値：負荷あり

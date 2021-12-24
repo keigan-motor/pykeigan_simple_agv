@@ -1,4 +1,5 @@
-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 from pykeigan import usbcontroller
 from pykeigan import utils
 import time
@@ -22,6 +23,8 @@ class TWD():
     def __init__(self, port_left, port_right, safe_time = 1, safe_option = 1, wheel_d = 100, tread = 400, button_event_cb = None):
         self.left = usbcontroller.USBController(port_left,False)
         self.right = usbcontroller.USBController(port_right,False)
+        self.left.enable_check_sum(True)
+        self.right.enable_check_sum(True)
         self.safe_time = safe_time
         self.safe_option = safe_option
         self.curve(0)
