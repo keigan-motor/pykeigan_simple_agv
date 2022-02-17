@@ -135,8 +135,8 @@ def motor_event_cb(event):
 """
 
 # KeiganMotor デバイスアドレス（上記参照）
-port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KFFE-if00-port0'
-port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KGLN-if00-port0'
+port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KHJE-if00-port0'
+port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KHN4-if00-port0'
 
 twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 640, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
 
