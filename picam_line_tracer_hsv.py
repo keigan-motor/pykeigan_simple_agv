@@ -25,11 +25,15 @@ BUTTON_RED_PIN_2 = 6 # ２つ目の赤ボタンを追加
 BUTTON_YELLOW_PIN = 19
 BUTTON_GREEN_PIN = 26
 
+# カメライメージサイズ
+IMAGE_WIDTH_PIXEL = 320
+IMAGE_HEIGHT_PIXEL = 240
+
 # カメラを初期化し、生画像への参照を取得する
 camera = PiCamera()
-camera.resolution = (640, 480)
+camera.resolution = (IMAGE_WIDTH_PIXEL, IMAGE_HEIGHT_PIXEL)
 camera.framerate = 32 #32
-rawCapture = PiRGBArray(camera, size=(640, 480))
+rawCapture = PiRGBArray(camera, size=(IMAGE_WIDTH_PIXEL, IMAGE_HEIGHT_PIXEL))
 time.sleep(0.1) # カメラのウォームアップ時間
 
 # ライントレーサー
@@ -38,9 +42,9 @@ time.sleep(0.1) # カメラのウォームアップ時間
 HSV値の範囲の色をラインとして認識する
 """
 # 領域分離を行った後、この面積を超えた領域のみ処理を行う
-LINE_AREA_THRESHOLD = 7000 # ライン検知用の面積の閾値
-LINE_CROSS_PASS_AREA_THRESHOLD = 20000 # ラインを横切った場合に前回のライン位置を採用するための面積の閾値
-STOP_MARKER_AREA_THRESHOLD = 30000 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
+LINE_AREA_THRESHOLD = 7000/4 # ライン検知用の面積の閾値
+LINE_CROSS_PASS_AREA_THRESHOLD = 20000/4 # ラインを横切った場合に前回のライン位置を採用するための面積の閾値
+STOP_MARKER_AREA_THRESHOLD = 30000/4 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
 
 RUN_CMD_INTERVAL = 0.05 # 0.1秒ごとに処理を行う
 RUN_BASE_RPM = 40
@@ -405,7 +409,7 @@ if __name__ == '__main__':
             # and occupied/unoccupied text
             image = frame.array
             # show the frame
-            roi = image[380:480, 0:640]
+            roi = image[IMAGE_HEIGHT_PIXEL - 50:IMAGE_HEIGHT_PIXEL, 0:IMAGE_WIDTH_PIXEL]
             hsvImg = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV) # HSV画像
             img = cv2.medianBlur(hsvImg,5)
 
@@ -444,7 +448,7 @@ if __name__ == '__main__':
                             pass
                         else:
                             shouldStop = False
-                            x = blue[1][0] - 320 # ラインのx位置を更新
+                            x = blue[1][0] - IMAGE_WIDTH_PIXEL / 2 # ラインのx位置を更新
                             twd.enable()
                     else:
                         lost_count += 1 # ロストしたカウントアップ
