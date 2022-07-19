@@ -22,14 +22,14 @@ KeiganMotor を追加することにより、搬送物の積み下ろしなど�
 
 ![KeiganAGV Kit](/img/AGVKit_1.jpg) 
 
-- 製品ページ: 2022/1月リリース予定
+- 製品ページ: https://keigan-motor.com/agvtolu
 - 製品サイト: https://keigan-motor.com
 - ドキュメント: https://docs.keigan-motor.com
 
 
 # 必要条件
 ## ハードウェア
-- Raspberry Pi 3B+, 3A+ または 4B（4Bの場合はUSBハブ必須）
+- Raspberry Pi 3B+, 3A+ または 4B（4Bの場合は Pi - KeiganMotor 接続の際、USBハブ経由必須）
 - PiCamera または USBカメラ
     - https://picamera.readthedocs.io/
 - KeiganMotor 駆動輪 2個分
@@ -372,6 +372,11 @@ StandardOutput=syslog+console
 [Install]
 WantedBy=multi-user.target
 ```
+
+#### start.py の中身
+start.py では、usbcam_line_tracer_hsv.py と、shutdown.py をサブプロセスとして起動しています。
+PiCamera を使用する場合は、usbcam_line_tracer_hsv.py の部分を picam_line_tracer_hsv.py に置き換えて下さい。
+
 
 ### 注意点
 ver 1.1.1 以降、本リポジトリのデフォルトはUSBカメラ用 usbcam_line_tracer_hsv.py の起動設定になっています。
