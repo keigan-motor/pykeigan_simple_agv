@@ -21,11 +21,16 @@ from twd import TWD
 
 from threading_capture import threading_capture
 
+# TAIYO様向け 新設
+AGV_STATE_PIN = 17 # AGV状態出力 High: STATE_LINE_TRACE, Low: STATE_IDLE
+AGV_SPEED_PIN = 27 # AGV速度出力 High: RUN_BASE_RPM, Low: RUN_LOWER_RPM
+BUTTON_GREEN_PIN_2 = 5 # ライントレース開始入力 Low to High (3.3V pull-up)
+
 # ボタン（赤黄緑）
-BUTTON_RED_PIN = 13
-BUTTON_RED_PIN_2 = 6 # ２つ目の赤ボタンを追加
+BUTTON_RED_PIN = 13 
+BUTTON_RED_PIN_2 = 6 # AGV停止入力 Low to High (3.3V pull-up)
 BUTTON_YELLOW_PIN = 19
-BUTTON_GREEN_PIN = 26
+BUTTON_GREEN_PIN = 26  
 
 # USBカメラ
 """
@@ -80,9 +85,9 @@ hasPayload = False # 負荷あり: True, 負荷なし: False
 
 # マーカーなどで停止する場合に関する変数
 isPausingLinetrace = False # マーカー発見等で停止すべき場合 True
-isResuming = False # 停止→ライントレース動作再開までの判定状態
-RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
-resumeCounter = 0 # 動作再開用のカウンタ 
+# isResuming = False # 停止→ライントレース動作再開までの判定状態
+# RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
+# resumeCounter = 0 # 動作再開用のカウンタ 
 # ドッキング中であることを示す 
 isDocking = False # ドッキング中なら True
 dockingCounter = 0 # ドッキング中ロストカウンタ
@@ -98,9 +103,9 @@ LOST_TOTAL_THRESHOLD = 5 # ラインをロストした回数の合計がこの�
 # PID limit
 DELTA_MAX = 25
 # PIDコントローラのゲイン値：負荷なし
-steer_p = 0.03 # 0.05 比例
-steer_i = 0.05 # 0.002 積分
-steer_d = 0 # 微分
+steer_p = 0.8 # 0.05 比例
+steer_i = 0.5 # 0.002 積分
+steer_d = 0.5 # 微分
 # PIDコントローラのゲイン値：負荷あり
 steer_load_p = 0.80 # 比例
 steer_load_i = 0.5 # 積分
@@ -201,6 +206,7 @@ def set_state(state: State):
         print("-> State.STATE_IDLE")
         twd.disable()
         twd.led(2, 255, 0, 0)
+        GPIO.output(AGV_STATE_PIN, GPIO.LOW)
     elif state == State.STATE_LINE_TRACE: # 緑
         print("-> State.STATE_LINE_TRACE")    
         t = threading.Thread(target = scheduler)
@@ -208,6 +214,7 @@ def set_state(state: State):
         twd.enable()
         #twd.run(10, 10)
         twd.led(2, 0, 255, 0)
+        GPIO.output(AGV_STATE_PIN, GPIO.HIGH)
     elif state == State.STATE_DEBUG: # ログだけ流れる。台車は動かない。水色
         print("-> State.STATE_DEBUG")
         t = threading.Thread(target = scheduler)
@@ -426,6 +433,10 @@ if __name__ == '__main__':
     GPIO.setup(BUTTON_YELLOW_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
     GPIO.setup(BUTTON_GREEN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
 
+    GPIO.setup(BUTTON_GREEN_PIN_2, GPIO.IN, pull_up_down=GPIO.PUD_UP) # ライントレース開始ピンを追加
+    GPIO.setup(AGV_STATE_PIN, GPIO.OUT, initial=GPIO.LOW) # 状態出力 AGV
+    GPIO.setup(AGV_SPEED_PIN, GPIO.OUT, initial=GPIO.HIGH) # 状態出力 スピード
+
     # ボタンを押したときのコールバックを登録
     GPIO.add_event_detect(BUTTON_RED_PIN, GPIO.FALLING, callback=red_callback, bouncetime=50)
     GPIO.add_event_detect(BUTTON_RED_PIN_2, GPIO.FALLING, callback=red_callback, bouncetime=50)
@@ -497,12 +508,12 @@ if __name__ == '__main__':
             
             # ライントレース中の動作フラグ
             stopFlag = False # 停止           
-            turnRightFlag = False # 右旋回
-            lowSpeedFlag = False # 低速運転
+            turnRightFlag = False # 右旋回90°
+            turnLeftFlag = False # 左旋回90°
             
             ## 停止条件は (a) 赤ラインマーカー or (b) arucoマーカー指定id いずれか
 
-            # (a) Arucoマーカー検知で停止を行う場合
+            # (b) Arucoマーカー検知で停止を行う場合
             roi_ar = image[80:240, 0:320] # [80:240, 0:320]
             corners,ids = aruco_reader(roi_ar) #ArUcoマーカー検知
             
@@ -514,16 +525,24 @@ if __name__ == '__main__':
                     turnRightFlag = True
                     img_stop = cv2.aruco.drawDetectedMarkers(roi_ar, corners, ids, (0,255,0))
                     cv2.imwrite("img_turn.jpg",img_stop)
-                elif 2 == ids[0,0]: # id: 2 で低速モード 
-                    lowSpeedFlag = True
+                elif 10 == ids[0,0]: # id: 10 で左折
+                    turnLeftFlag = True
+                    img_stop = cv2.aruco.drawDetectedMarkers(roi_ar, corners, ids, (0,255,0))
+                    cv2.imwrite("img_turn.jpg",img_stop)                    
+                elif 2 == ids[0,0]: # id: 2 で低速フラグon 
+                    run_rpm = RUN_LOWER_RPM # 低速
+                    GPIO.output(AGV_SPEED_PIN, GPIO.LOW)
+                elif 3 == ids[0,0]: # id: 3 で低速フラグoff（ベース速度）   
+                    run_rpm = RUN_BASE_RPM # ベース速度
+                    GPIO.output(AGV_SPEED_PIN, GPIO.HIGH)               
                 elif 1 == ids[0,0]: # id: 1 で停止
                     stopFlag = True
                     img_stop = cv2.aruco.drawDetectedMarkers(roi_ar, corners, ids, (0,255,0))
-                    cv2.imwrite("img_stop.jpg",img_stop)
+                    cv2.imwrite("img_stop.jpg",img_stop)               
 
-            # (b) 赤ラインマーカーで停止を行う場合
-            red = get_red_moment(img)
-            stopFlag = red[0] # 赤マーカーが存在する場合、True
+            # (b) 赤ラインマーカーで停止を行う場合->赤ラインでは停止しない
+            # red = get_red_moment(img)
+            # stopFlag = red[0] # 赤マーカーが存在する場合、True
 
             if cur_state == State.STATE_LINE_TRACE or cur_state == State.STATE_DEBUG:
 
@@ -532,21 +551,21 @@ if __name__ == '__main__':
                     print("Detected Stop Marker:", stop_marker_count)
                     reset_pid_params()
                     isPausingLinetrace = True # ライントレース一時停止
-                    twd.enable() # ラインロストで disable 状態になっている場合がある
-                    twd.free(0.5) # 停止、タイムアウト0.5秒
-                    
-                    # その場で 180°旋回する
-                    twd.pivot_turn(20, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
 
-                    # (ア) 搬送ローラーで荷物の搬送を行う場合
-                    # twd.move_straight(15, 300, 5.5)
-                    # do_taskset()
-                    # twd.stop(10)
-                    
-                    run_rpm = RUN_BASE_RPM # 速度を元に戻す
+                    if cur_state == State.STATE_LINE_TRACE:
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        
+                        # その場で 180°旋回する
+                        twd.pivot_turn(20, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
 
+                        # (ア) 搬送ローラーで荷物の搬送を行う場合
+                        # twd.move_straight(15, 300, 5.5)
+                        # do_taskset()
+                        # twd.stop(10)
+                    
                     # 以下を有効にすると、緑（白）ボタンを押すまで動作再開しない
-                    # set_state(State.STATE_IDLE) 
+                    set_state(State.STATE_IDLE) 
 
                 elif turnRightFlag:
                     print("Detected Right Turn Marker")
@@ -557,15 +576,18 @@ if __name__ == '__main__':
                     twd.free(0.1) # 停止、タイムアウト0.5秒
                     twd.move_straight(20, 380, 4) # 直進。マーカー位置によって調整すること。
                     twd.pivot_turn(20, -90, 3) # 90°回転。TWD初期化時、tread を正確に設定していない場合、ズレる。
-                    twd.stop(0.1)                
+                    twd.stop(0.1)               
 
-                elif lowSpeedFlag:
-                    print("Detected Low Speed Marker")
+                elif turnLeftFlag:
+                    print("Detected Left Turn Marker")
                     x = 0
                     eI = 0
                     isPausingLinetrace = True # ライントレース停止
                     twd.enable() # ラインロストで disable 状態になっている場合がある
-                    run_rpm = RUN_LOWER_RPM # 低速モードとする
+                    twd.free(0.1) # 停止、タイムアウト0.5秒
+                    twd.move_straight(20, 380, 4) # 直進。マーカー位置によって調整すること。
+                    twd.pivot_turn(20, 90, 3) # 90°回転。TWD初期化時、tread を正確に設定していない場合、ズレる。
+                    twd.stop(0.1)  
 
                 else: # ライントレース処理
                     blue = get_blue_moment(img)
