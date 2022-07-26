@@ -18,6 +18,22 @@ import RPi.GPIO as GPIO  # GPIOにアクセスするライブラリ
 import csv # CSVファイルを取り扱う（読み書き）ライン検知のキャリブレーションデータを作製
 
 from twd import TWD # KeiganMotor での AGV開発を簡単にするためのライブラリ。メインファイルと同じフォルダに、twd.py を置いて下さい。
+from pykeigan import utils
+
+#config
+import configparser
+import os
+config = configparser.ConfigParser()
+config.read(os.path.join(os.path.dirname(__file__), 'config_test.ini'), encoding='utf-8')
+
+command_list={}
+for i in config["aruco_id_command"]:
+    command_list[i]=config["aruco_id_command"][i]
+
+#1D detect
+isMovingForward=True
+#revertF=-1
+
 
 # ボタン（赤黄緑）
 BUTTON_RED_PIN = 13
@@ -44,18 +60,21 @@ HSV値の範囲の色をラインとして認識する
 # 領域分離を行った後、この面積を超えた領域のみ処理を行う
 LINE_AREA_THRESHOLD = 7000/4 # ライン検知用の面積の閾値
 LINE_CROSS_PASS_AREA_THRESHOLD = 20000/4 # ラインを横切った場合に前回のライン位置を採用するための面積の閾値
+LINE_UPPER_AREA_THRESHOLD = 5500/4
 STOP_MARKER_AREA_THRESHOLD = 30000/4 # 停止テープマーカーを検知するための面積の閾値（※テープ, arucoマーカーではない）
 
 RUN_CMD_INTERVAL = 0.05 # 0.1秒ごとに処理を行う
-RUN_BASE_RPM = 40
+#RUN_BASE_RPM = 50
+RUN_BASE_RPM=int(config['rpm']['base'])
+#RUN_LOWER_RPM = 15
+RUN_LOWER_RPM=int(config['rpm']['lower'])
 STOP_AFTER_RPM = 10
-STOP_AFTER_RPM1 = 5
 
 # 負荷有無で PIDコントローラゲインを変更するため（デフォルトは未使用）
 hasPayload = False # 負荷あり: True, 負荷なし: False
 
 # マーカーなどで停止する場合に関する変数
-shouldStop = False # マーカー発見等で停止すべき場合 True
+isPausingLinetrace = False # マーカー発見等で停止すべき場合 True
 isResuming = False # 停止→ライントレース動作再開までの判定状態
 RESUME_THRESHOLD = 10 # resumeCounter がこの回数以上の場合、動作再開する（動作しても良い）
 resumeCounter = 0 # 動作再開用のカウンタ 
@@ -71,6 +90,8 @@ LOST_THRESHOLD = 7 # ラインをロストしたとみなす判定の閾値
 lost_total_count = 0 # ラインをロストした回数の合計
 LOST_TOTAL_THRESHOLD = 5 # ラインをロストした回数の合計がこの値以上になると、AGVはアイドル状態に戻る
 
+# PID limit
+DELTA_MAX = 25
 # PIDコントローラのゲイン値：負荷なし
 steer_p = 0.05 # 比例
 steer_i = 0.0025 # 積分
@@ -79,11 +100,13 @@ steer_d = 0 # 微分
 steer_load_p = 0.75 # 比例
 steer_load_i = 0.5 # 積分
 steer_load_d = 0 # 微分
-
+eI = 0 # 前回の偏差の積分値を保存しておく
+x = 0 # ライン位置
+x_old = 0 # ラインの前回の位置を保存しておく
 CHARGING_TIME_SEC = 10 # 充電ステーションでの待機時間
 
-old_moment = (320, 50)
-
+#run rpm variable
+run_rpm = RUN_BASE_RPM
 
 # システムの状態を表す列挙子クラス
 class State(Enum):
@@ -138,17 +161,31 @@ def motor_event_cb(event):
             ex)/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00LSSA-if00-port0
 """
 
-# KeiganMotor デバイスアドレス（上記参照）
-port_left='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KHJE-if00-port0'
-port_right='/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DM00KHN4-if00-port0'
+from pykeigan import usbcontroller
+#config
+port_left=config['port']['port_L']
+port_right=config['port']['port_R']
+wheel_d_c = float(config['parameter']['wheel_d'])
+tread_c = float(config['parameter']['tread'])
 
-twd = TWD(port_left, port_right, wheel_d = 101.6, tread = 640, button_event_cb = motor_event_cb) # KeiganMotor の2輪台車 TODO
+d_marker = float(config['parameter']['d_marker'])
+d_corner = float(config['parameter']['d_corner'])
+
+#other parameter
+d_deg = float(config['parameter_other']['d_deg'])
+pause_t = float(config['parameter_other']['pause_t'])
+
+# sensor pin list 
+sensorList = [config['sensor']['pin_0'], config['sensor']['pin_1'], config['sensor']['pin_2'], config['sensor']['pin_3'], config['sensor']['pin_4']]
+
+
+# 2輪台車 wheel_d: 車輪直径[mm], tread: トレッド幅 = 車輪センター間の距離[mm]
+# 特に トレッド幅については、実際と合致していない場合、その場旋回で角度のズレが生じる
+#twd = TWD(port_left, port_right, wheel_d, tread, button_event_cb = motor_event_cb)
+twd = TWD(port_left, port_right, wheel_d = wheel_d_c, tread = tread_c, button_event_cb = motor_event_cb) 
 
 cur_state = State.STATE_IDLE # システムの現在の状態
 
-eI = 0 # 前回の偏差の積分値を保存しておく
-x = 0 # ライン位置
-x_old = 0 # ラインの前回の位置を保存しておく
 
 
 def set_state(state: State):
@@ -210,8 +247,20 @@ def pid_controller():
     eI = eI + RUN_CMD_INTERVAL * x # 偏差 積分
     eD = (x - x_old) / RUN_CMD_INTERVAL # 偏差 微分
     delta_v = gain_p * x + gain_i * eI + gain_d * eD
+
+    # アンチワインドアップ
+    if delta_v > DELTA_MAX:
+        eI -= (delta_v - DELTA_MAX) / gain_i
+        if eI < 0: eI = 0
+        delta_v = DELTA_MAX
+    elif delta_v < - DELTA_MAX:
+        eI -= (delta_v + DELTA_MAX) / gain_i
+        if eI > 0:
+            eI = 0
+        delta_v = - DELTA_MAX
+
     x_old = x
-    rpm = (RUN_BASE_RPM + delta_v, RUN_BASE_RPM - delta_v)
+    rpm = (run_rpm + delta_v, run_rpm - delta_v)
     #print("x =", x, ", rpm =", rpm)
     return rpm
         
@@ -304,16 +353,20 @@ def get_blue_moment(hsv):
 
     return get_moment(mask, LINE_AREA_THRESHOLD) 
 
-
+def reset_pid_params():
+    eI = 0
+    x = 0
+    x_old = 0 
 
 def scheduler():
-    global cur_state, shouldStop, isDocking
+    global cur_state, isPausingLinetrace, isDocking
     if cur_state == State.STATE_IDLE:
         return
     # タイマーの再生成
     t = threading.Timer(RUN_CMD_INTERVAL, scheduler)
     t.start()
-    if shouldStop: # マーカー検知時など停止するべき場合
+    if isPausingLinetrace: # マーカー検知時など停止するべき場合
+        reset_pid_params()
         return
     #print(time.time())
     rpm = pid_controller() # PIDコントローラに突っ込む
@@ -329,6 +382,25 @@ def scheduler():
 def nothing(x):
     pass
 
+# aruco マーカー
+# aruco マーカーの辞書定義
+dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+
+# arucoマーカーを検知する
+def aruco_reader(roi_ar):
+    corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(roi_ar, dictionary)
+    cv2.aruco.drawDetectedMarkers(roi_ar, corners, ids, (0,255,0)) 
+    cv2.imshow('detectedMakers',roi_ar)
+    return corners,ids
+
+#adjust
+def moveToMarker():
+    twd.move_straight(RUN_LOWER_RPM, d_marker, 4.5) # 直進。マーカー位置によって調整すること。
+def moveToCorner():
+    twd.move_straight(RUN_LOWER_RPM, d_corner, 4.5) # 直進。マーカー位置によって調整すること。    
+def passMarker():
+    twd.move_straight(RUN_BASE_RPM, d_marker, 4.5) # 直進。マーカー位置によって調整すること。
+
 
 if __name__ == '__main__':
 
@@ -343,6 +415,11 @@ if __name__ == '__main__':
     GPIO.setup(BUTTON_YELLOW_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
     GPIO.setup(BUTTON_GREEN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
 
+    # センサー入力の設定
+    for i in range(len(sensorList)):
+        print(sensorList[i])
+        GPIO.setup(sensorList[i], GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    
     # ボタンを押したときのコールバックを登録
     GPIO.add_event_detect(BUTTON_RED_PIN, GPIO.FALLING, callback=red_callback, bouncetime=50)
     GPIO.add_event_detect(BUTTON_RED_PIN_2, GPIO.FALLING, callback=red_callback, bouncetime=50)
@@ -410,45 +487,222 @@ if __name__ == '__main__':
             image = frame.array
             # show the frame
             roi = image[IMAGE_HEIGHT_PIXEL - 50:IMAGE_HEIGHT_PIXEL, 0:IMAGE_WIDTH_PIXEL]
+            roi_u = image[45:95, 0:IMAGE_WIDTH_PIXEL]
             hsvImg = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV) # HSV画像
+            hsvImg_u = cv2.cvtColor(roi_u, cv2.COLOR_BGR2HSV)
             img = cv2.medianBlur(hsvImg,5)
+            img_u = cv2.medianBlur(hsvImg_u,5)
 
-            # 赤重心の検出
-            red = get_red_moment(img)
-                        
-            isRedMarker = red[0] # 赤マーカーが存在する場合、True
-            isLineExist = False # ラインが存在する場合、True
+            # ライントレース中の動作フラグ
+            cmdFlag=False
+            stopFlag = False # 停止
+
+            # (a) Arucoマーカー検知で停止を行う場合
+            roi_ar = image[80:240, 0:320] # [80:240, 0:320]
+            corners,ids = aruco_reader(roi_ar) #ArUcoマーカー検知
+
+            if ids is not None:
+                #marker_mean_y = corners[0][0][1][1]+corners[0][0][1][1]+corners[0][0][1][1]+corners[0][0][1][1]
+                #print(corners[0][0][1][1])
+                cmdFlag=True
+                cmd=-1
+                # 発見した aruco id が、command_list 内のコマンドid とマッチしている場合 cmd = id とする
+                for i in range (len(command_list)): 
+                    if i == ids[0,0]:
+                        #cmdFlag=True
+                        cmd=i
+                        break
+
+            # (b) 赤ラインマーカーで停止を行う場合
+            #red = get_red_moment(img)
+            #stopFlag = red[0] # 赤マーカーが存在する場合、True
 
             if cur_state == State.STATE_LINE_TRACE or cur_state == State.STATE_DEBUG:
-
-                if isRedMarker: # 赤マーカーを検知したら、停止して処理（TODO、未使用？）
+                if stopFlag:
                     stop_marker_count += 1
                     print("Detected Stop Marker:", stop_marker_count)
-                    x = 0
-                    eI = 0
-                    shouldStop = True # ライントレース停止
+                    reset_pid_params()
+                    isPausingLinetrace = True # ライントレース一時停止
                     twd.enable() # ラインロストで disable 状態になっている場合がある
-                    twd.free(5) # 停止、タイムアウト5秒
-                    #twd.move_straight(10, 360, 5)
-                    twd.pivot_turn(10, 180, 20) # TWD初期化時、tread を正確に設定していない場合、ズレる
+                    twd.free(0.5) # 停止、タイムアウト0.5秒 その場で 180°旋回する
+                    twd.pivot_turn(20, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
+                elif cmdFlag:
+                    cmd_str = command_list.get(str(cmd))
+                    print(cmd_str)
+                    if cmd_str == 'stop':
+                        stop_marker_count += 1
+                        print("Detected Stop Marker:", stop_marker_count)
+                        reset_pid_params()
+                        isPausingLinetrace = True # ライントレース一時停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒 その場で 180°旋回する
+                        twd.pivot_turn(20, 180, 10) # TWD初期化時、tread を正確に設定していない場合、ズレる
+
+                           # (ア) 搬送ローラーで荷物の搬送を行う場合
+                                #    twd.move_straight(15, 390, 7)
+                                #    do_taskset()
+                                #    twd.stop(10)
+                                    
+                                #    run_rpm = RUN_BASE_RPM # 速度を元に戻す
+
+                                    # 以下を有効にすると、緑（白）ボタンを押すまで動作再開しない
+                                    # set_state(State.STATE_IDLE)
+                    elif cmd_str == 'pause':
+                        print("Detected Pause Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        # moveToMarker()
+                        twd.stop(pause_t)
+                    elif cmd_str == 'idle':
+                        print("Detected idle Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        moveToMarker()
+                        set_state(State.STATE_IDLE) # IDLE 状態にする（Bluetoothからの再開処理待ち）                    
+                    elif cmd_str == 'placing_task':
+                        print("Detected Placing Task Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        moveToMarker()
+                        ## ============ Add Task Command Code Here ============ ##
+                        for i in range (len(sensorList)):
+                            print("...placing task ("+str(i+1)+")...")
+                            while(True):
+                                #wait
+                                time.sleep(0.1)
+                                if GPIO.input(sensorList[i]) == GPIO.HIGH:
+                                    time.sleep(0.05)
+                                    if GPIO.input(sensorList[i]) == GPIO.HIGH:
+                                        print(str(sensorList[i]) + "pin is HIGH")
+                                        twd.enable()
+                                        twd.move_straight(RUN_LOWER_RPM, d_deg, 4.5)
+                                        break
+                            
+                            twd.stop(0.5)
+                        print("...Task done")
+                        
+                        ## ==================================================== ##
+                    elif cmd_str == 'picking_task':
+                        print("Detected Picking Task Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        moveToMarker()
+                        ## ============ Add Task Command Code Here ============ ##
+                        for i in range (len(sensorList)):
+                            print("...picking task ("+str(i+1)+")...")
+                            while(True):
+                                #wait
+                                time.sleep(0.1)
+                                if GPIO.input(sensorList[i]) == GPIO.LOW:
+                                    time.sleep(0.05)
+                                    if GPIO.input(sensorList[i]) == GPIO.LOW:
+                                        print(str(sensorList[i]) + "pin is LOW")
+                                        twd.enable()
+                                        twd.move_straight(RUN_LOWER_RPM, d_deg, 4.5)
+                                        break
+                            
+                            twd.stop(0.5)
+                        print("...Task done")
+                        
+                        ## ==================================================== ##
                     
-                    # 以下を有効にすると、緑（白）ボタンを押すまで動作再開しない
-                    # set_state(State.STATE_IDLE) 
-                    # shouldStop = False # ライントレース再開
+                    elif cmd_str == 'turnR':
+                        print("Detected Right Turn Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        moveToCorner()
+                        twd.pivot_turn(RUN_LOWER_RPM, -90, 3) # 90°回転。TWD初期化時、tread を正確に設定していない場合、ズレる。
+                        twd.stop(0.1)
+                    
+                    elif cmd_str == 'turnL':
+                        print("Detected Left Turn Marker")
+                        x = 0
+                        eI = 0
+                        #if not isMovingForward:
+                        print("turning left...")
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.5) # 停止、タイムアウト0.5秒
+                        moveToCorner()
+                        twd.pivot_turn(RUN_LOWER_RPM, 90, 3) 
+                        twd.stop(0.1)
+                                    
+                    elif cmd_str== 'uturn':
+                        print("Detected U-Turn Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.1) # 停止、タイムアウト0.5秒
+                        twd.pivot_turn(RUN_LOWER_RPM, -180, 5.5) 
+                        twd.stop(0.1)
+                        #isMovingForward = not isMovingForward
+                        #print("Moving Forward?", isMovingForward)
+                                           
+                    elif cmd_str=='low_speed':
+                        print("Detected Low Speed Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        run_rpm = RUN_LOWER_RPM # 低速モードとする
+                    
+                    elif cmd_str=='pass':
+                        print("Detected Pass Marker")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.1) # 停止、タイムアウト0.5秒
+                        passMarker()
+                    
+                    else:
+                        print("Detected Unknown Marker - Pass")
+                        x = 0
+                        eI = 0
+                        isPausingLinetrace = True # ライントレース停止
+                        twd.enable() # ラインロストで disable 状態になっている場合がある
+                        twd.free(0.1) # 停止、タイムアウト0.5秒
+                        passMarker()
+                        
+                        
+                        
 
-
-                else: 
+                else: # ライントレース処理
                     blue = get_blue_moment(img)
+                    blue_u = get_blue_moment(img_u)
+                    isLineExist = False # ラインが存在する場合、True
                     isLineExist = blue[0]
                     lineArea = blue[2]
+                    lineArea_u = blue_u[2]
                     if isLineExist:
                         lost_count = 0 # ラインロストのカウントをリセット
                         lost_total_count = 0 # ライントータルロストのカウントをリセット
+                        # print(lineArea_u)
                         if lineArea > LINE_CROSS_PASS_AREA_THRESHOLD:
                             pass
                         else:
-                            shouldStop = False
-                            x = blue[1][0] - IMAGE_WIDTH_PIXEL / 2 # ラインのx位置を更新
+                            if lineArea_u < LINE_UPPER_AREA_THRESHOLD:
+                                run_rpm = RUN_LOWER_RPM*(0.7+lineArea_u/LINE_UPPER_AREA_THRESHOLD)
+                            else:
+                                run_rpm = RUN_BASE_RPM
+                            isPausingLinetrace = False
+                            x = blue[1][0] - 160 # ラインのx位置を更新
                             twd.enable()
                     else:
                         lost_count += 1 # ロストしたカウントアップ
@@ -462,16 +716,18 @@ if __name__ == '__main__':
                                 # ラインロスト処理
                                 lost_total_count += 1
                                 print("Line not Exist")
-                                x = 0
-                                eI = 0
-                                shouldStop = True # ライントレース停止
+                                cv2.imwrite("img_linelost.jpg",roi)
+                                isPausingLinetrace = True # ライントレース停止
+                                twd.free()
                                 print("Back")
-                                # 半回転戻る TODO
+                                # 後退してラインを再発見する。車輪径に応じて調整必要
                                 if cur_state == State.STATE_LINE_TRACE:
-                                    twd.move_straight(STOP_AFTER_RPM, -180, 5) # 1回転=360°、15秒タイムアウトで前進 hsv3:440->510
+                                    twd.move_straight(STOP_AFTER_RPM, -180, 5) # 車輪半回転 180°後退、15秒タイムアウトで前進 hsv3:440->510
                                 print("Resume Line Trace")
-                                #shouldStop = False # ライントレース再開
+                                reset_pid_params()
+                                isPausingLinetrace = False # ライントレース再開
                     # print("x, eI:", x, eI)
+
 
 
             cv2.imshow("Main", hsvImg)
