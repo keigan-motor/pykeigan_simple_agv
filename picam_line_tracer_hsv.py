@@ -176,7 +176,7 @@ d_deg = float(config['parameter_other']['d_deg'])
 pause_t = float(config['parameter_other']['pause_t'])
 
 # sensor pin list 
-sensorList = [config['sensor']['pin_0'], config['sensor']['pin_1'], config['sensor']['pin_2'], config['sensor']['pin_3'], config['sensor']['pin_4']]
+sensorList = [int(config['sensor']['pin_0']), int(config['sensor']['pin_1']), int(config['sensor']['pin_2']), int(config['sensor']['pin_3']), int(config['sensor']['pin_4'])]
 
 
 # 2輪台車 wheel_d: 車輪直径[mm], tread: トレッド幅 = 車輪センター間の距離[mm]
