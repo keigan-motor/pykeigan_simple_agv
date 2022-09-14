@@ -348,6 +348,13 @@ pkill -f _line_tracer
 以下の手順により Pythonプログラムを OS起動直後に自動実行できます。
 AGVKit では、本自動起動は設定済みです。
 
+## 自動実行の仕組み systemd
+KeiganAGVでは、systemd の仕組みを用いて自動実行を実現しています。
+
+- システム起動
+- /etc/systemd/system/km.service を実行
+- /home/pi/Desktop/pykeigan_simple_agv/start.py を実行
+
 ## 自動起動サービス有効化の手順
 root権限で以下の場所に km.service ファイルを作成します
 ```
