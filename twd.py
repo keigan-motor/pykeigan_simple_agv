@@ -111,3 +111,24 @@ class TWD():
         else:
             self.left.set_safe_run_settings(False, self.safe_time * 1000, self.safe_option)
             self.right.set_safe_run_settings(False, self.safe_time * 1000, self.safe_option)
+            
+
+    def on_left_measurement_cb(self, measurement):
+        alert = ''
+        trq = measurement['torque']
+        if abs(trq) > 0.4: 
+            alert = ' over 80% !'
+            print('Motor L [Nm] {:.2f}'.format(trq) + alert)
+
+    def on_right_measurement_cb(self, measurement):
+        alert = ''
+        trq = measurement['torque']
+        if abs(trq) > 0.4:
+            alert = ' over 80% !'
+            print('Motor R [Nm] {:.2f}'.format(trq) + alert)
+        
+
+    def start_motor_measurement(self):
+        self.left.on_motor_measurement_value_cb = self.on_left_measurement_cb
+        self.right.on_motor_measurement_value_cb = self.on_right_measurement_cb
+
