@@ -20,9 +20,9 @@ KeiganMotor を追加することにより、搬送物の積み下ろしなど�
 本AGVシステムを製作するために必要なパーツをキット化したものです。
 動作に必要なソフトウェアはセットアップされています。
 
-![KeiganAGV Kit](/img/AGVKit_1.jpg) 
+![KeiganAGV10LU](/img/AGVKit_1.jpg) 
 
-- 製品ページ: 2022/1月リリース予定
+- 製品ページ: https://keigan-motor.com/agvtolu/
 - 製品サイト: https://keigan-motor.com
 - ドキュメント: https://docs.keigan-motor.com
 
@@ -46,11 +46,14 @@ KeiganMotor を追加することにより、搬送物の積み下ろしなど�
 
 ### KeiganMotor 
 以下を使用します。
-- KeiganMotor KM-1S-M6829 ホイールキット
+- KeiganMotor KM-1S-M6829TS ホイールキット
     - https://keigan-motor.com/km-1s/
 
 - ファームウェア を ver 2.73B 以降にアップデートして下さい。
     - https://docs.keigan-motor.com/firmware/download
+    
+- KeiganMotor が走行中に再起動し、停止する問題が生じる場合
+    - ver 2.39 ファームウェアを使用することで、安定する場合があります。
 
 
 ## ソフトウェア要件
@@ -100,6 +103,23 @@ OpenCV の contrib パッケージに含まれます。
 
 ![stop to see aruco marker](/img/aruco.jpg) 
 
+aruco マーカーの ID によって、動作を変更するサンプルは、以下を参照下さい。
+https://github.com/keigan-motor/pykeigan_simple_agv/tree/cd_dev_0725_picam
+config_test.ini に定義されたアクションを実行します。
+
+#### config_test.ini アクションの例
+[aruco_id_command]
+0 = idle: アイドル状態にする
+1 = placing_task: ラズパイのGPIOを用いる特定のタスク
+2 = turnL: 左に90度旋回
+3 = pass
+4 = pass
+5 = turnL: 左に90度旋回
+6 = picking_task: ラズパイのGPIOを用いる特定のタスク
+7 = pass
+8 = pass
+9 = idle: アイドル状態にする
+10 = pause: 一時停止
 
 #### 注意点
 - 床面に貼る場合、上から透明の保護テープを貼ることを推奨します。
